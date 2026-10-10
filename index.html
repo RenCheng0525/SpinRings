@@ -1,0 +1,1579 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>轉盤方塊</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=VT323&display=swap">
+<style>
+/* ==========================================================
+   外觀概念：一台 70 年代的黑膠唱盤
+   - 鋁製面板＝機身
+   - 黑膠唱片＝遊戲盤面，中央圓標會跟著轉
+   - 綠色螢光顯示器（VFD）＝分數、下一個方塊、訊息
+   - 下方實體按鍵＝操作
+   ========================================================== */
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --room:#1c201e;
+  --alu-light:#e6e6e1; --alu-dark:#babbb5; --alu-edge:#8b8c86;
+  --ink:#1c1e1d; --ink-soft:#5a5d5b;
+  --vfd:#7ff5cf; --vfd-soft:rgba(127,245,207,.6); --vfd-ghost:rgba(127,245,207,.1); --glass:#06100d;
+  --signal:#ff5a3c;
+  --font:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --digits:"VT323",ui-monospace,monospace;
+}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--font);color:var(--ink);line-height:1.5;
+  -webkit-text-size-adjust:100%;text-size-adjust:100%;
+  background:radial-gradient(120% 70% at 50% 0%,#2e3431,var(--room));
+  padding:max(14px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px))
+          max(14px,env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));
+}
+
+/* ---- 機身 ---- */
+.deck{
+  container-type:inline-size;
+  width:100%;max-width:max(300px,min(580px,calc(100dvh - 250px)));margin-inline:auto;
+  padding:16px;border-radius:20px;display:flex;flex-direction:column;gap:12px;
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.08) 0 1px,rgba(0,0,0,.025) 1px 3px),
+    linear-gradient(180deg,var(--alu-light),var(--alu-dark));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.8),inset 0 -2px 0 rgba(0,0,0,.12),0 26px 60px rgba(0,0,0,.5);
+}
+
+/* ---- 品牌列 ---- */
+.brand{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px}
+.logo{display:flex;align-items:baseline;gap:10px;min-width:0}
+.logo-main{font-weight:900;font-size:22px;letter-spacing:.2em;white-space:nowrap}
+.logo-sub{font-size:12px;color:var(--ink-soft);letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.switches{display:flex;gap:8px;flex:none}
+.chip{
+  display:flex;align-items:center;gap:6px;font:inherit;font-size:12px;color:var(--ink-soft);
+  padding:4px 10px;border-radius:999px;border:1px solid var(--alu-edge);cursor:pointer;
+  background:linear-gradient(#f3f3ef,#d6d7d1);box-shadow:0 2px 0 var(--alu-edge),inset 0 1px 0 #fff;
+}
+.chip:active{transform:translateY(1px);box-shadow:0 1px 0 var(--alu-edge),inset 0 1px 0 #fff}
+.chip .on{color:var(--ink);font-weight:700}
+.led{width:8px;height:8px;border-radius:50%;background:#7a7c78;box-shadow:inset 0 1px 1px rgba(0,0,0,.45)}
+.chip.lit .led{background:var(--signal);box-shadow:0 0 6px var(--signal)}
+
+/* ---- 螢光顯示器 ---- */
+.vfd{
+  display:grid;grid-template-columns:auto 1.7fr 1fr .8fr;align-items:end;gap:4px 14px;
+  padding:10px 14px 8px;border-radius:10px;color:var(--vfd);
+  background:radial-gradient(140% 120% at 50% 0%,#11221d,var(--glass));
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.85),0 1px 0 rgba(255,255,255,.7);
+}
+.cap{display:block;font-size:11px;color:var(--vfd-soft);letter-spacing:.08em;white-space:nowrap}
+.digits{
+  position:relative;isolation:isolate;display:inline-block;
+  font-family:var(--digits);font-size:36px;line-height:.95;letter-spacing:.04em;
+  text-shadow:0 0 8px rgba(127,245,207,.55);
+}
+.digits::before{content:attr(data-ghost);position:absolute;inset:0;z-index:-1;color:var(--vfd-ghost);text-shadow:none}
+.next canvas{display:block;width:54px;height:36px}
+.status{
+  grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-top:4px;padding-top:6px;
+  border-top:1px solid rgba(127,245,207,.15);
+}
+.message{
+  flex:1;min-width:0;margin:0;font-size:13px;text-shadow:0 0 6px rgba(127,245,207,.4);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* 播放／暫停鍵：放在顯示器裡，遠離操作按鍵，避免玩到一半誤按暫停 */
+.play{
+  flex:none;display:flex;align-items:center;gap:6px;font:inherit;font-size:12px;cursor:pointer;
+  color:var(--vfd);background:rgba(127,245,207,.06);border:1px solid rgba(127,245,207,.45);border-radius:6px;
+  padding:3px 10px;text-shadow:0 0 6px rgba(127,245,207,.5);touch-action:manipulation;user-select:none;-webkit-user-select:none;
+}
+.play b{font-size:12px;line-height:1}
+.play:active,.play.pressed{background:rgba(127,245,207,.22)}
+
+/* ---- 唱盤 ---- */
+#board{display:block;width:100%;aspect-ratio:1/1;touch-action:none}
+
+/* ---- 實體按鍵 ---- */
+/* 左手群：轉圓盤　右手群：下移、旋轉、落下（落下最大、在最右邊，大拇指最好按） */
+.keys{display:flex;justify-content:space-between;gap:16px}
+.cluster{display:flex;gap:8px;min-width:0}
+.cluster.spin{flex:2}
+.cluster.act{flex:3.4}
+.cluster .key{flex:1;min-width:0}
+.cluster .key.big{flex:1.7}
+.key.big b{font-size:24px}
+.key{
+  display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 0 6px;
+  font:inherit;color:var(--ink);cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;
+  border-radius:8px;border:1px solid var(--alu-edge);
+  background:linear-gradient(#f7f7f3,#d3d4ce);box-shadow:0 3px 0 var(--alu-edge),inset 0 1px 0 #fff;
+}
+.key b{font-size:20px;line-height:1.15}
+.key small{font-size:11px;color:var(--ink-soft);white-space:nowrap}
+.key:active,.key.pressed{transform:translateY(2px);box-shadow:0 1px 0 var(--alu-edge),inset 0 1px 0 #fff}
+.key.red{background:linear-gradient(#ff7a5f,#d8402a);border-color:#9f2f1d;box-shadow:0 3px 0 #9f2f1d,inset 0 1px 0 rgba(255,255,255,.5);color:#fff}
+.key.red small{color:rgba(255,255,255,.88)}
+.key.red:active,.key.red.pressed{box-shadow:0 1px 0 #9f2f1d,inset 0 1px 0 rgba(255,255,255,.5)}
+.key.dark{background:linear-gradient(#3b3f3d,#222523);border-color:#121413;box-shadow:0 3px 0 #111,inset 0 1px 0 rgba(255,255,255,.15);color:var(--vfd)}
+.key.dark small{color:#a8b3ae}
+.key.dark:active,.key.dark.pressed{box-shadow:0 1px 0 #111,inset 0 1px 0 rgba(255,255,255,.15)}
+button:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+/* ---- 說明視窗 ---- */
+.help-chip{width:28px;height:28px;padding:0;justify-content:center;font-weight:700;font-size:14px;color:var(--ink)}
+.help-dialog{
+  border:none;padding:0;border-radius:16px;color:var(--ink);
+  width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 48px);
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.08) 0 1px,rgba(0,0,0,.025) 1px 3px),
+    linear-gradient(180deg,var(--alu-light),var(--alu-dark));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 24px 60px rgba(0,0,0,.55);
+}
+.help-dialog::backdrop{background:rgba(12,14,13,.6);backdrop-filter:blur(2px)}
+.help-body{padding:20px 22px 18px;display:flex;flex-direction:column;gap:12px}
+.help-body h2{margin:0;font-size:20px;font-weight:900;letter-spacing:.12em}
+.help-body h3{margin:0 0 6px;font-size:13px;color:var(--ink-soft);font-weight:700}
+.help-body p{margin:0;font-size:14px}
+.help-body dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;align-items:center}
+.help-body dt{white-space:nowrap}
+.help-body dd{margin:0}
+.help-close{
+  align-self:flex-end;font:inherit;font-weight:700;font-size:14px;cursor:pointer;color:var(--ink);
+  padding:7px 20px;border-radius:8px;border:1px solid var(--alu-edge);
+  background:linear-gradient(#f7f7f3,#d3d4ce);box-shadow:0 3px 0 var(--alu-edge),inset 0 1px 0 #fff;
+}
+.help-close:active{transform:translateY(2px);box-shadow:0 1px 0 var(--alu-edge),inset 0 1px 0 #fff}
+kbd{
+  display:inline-block;white-space:nowrap;font-family:var(--font);font-size:11px;line-height:1.5;
+  padding:0 5px;margin:0 1px;border-radius:3px;border:1px solid var(--alu-edge);background:#f3f3ef;color:var(--ink);
+}
+
+/* ---- 觸控裝置（手機、平板）沒有鍵盤，就不顯示按鍵說明 ---- */
+/* 說明視窗裡：手機只顯示手勢，電腦只顯示鍵盤 */
+.touch-help{display:none}
+@media (hover:none) and (pointer:coarse){
+  .kbd-help{display:none}
+  .touch-help{display:block}
+
+  /* 手機：圓盤直接用手指轉，只留兩顆大按鍵，左「旋轉」右「落下」，左右對稱 */
+  .deck .keys{display:grid;grid-template-columns:1fr 1fr;gap:clamp(36px,24cqw,160px)}
+  .cluster{display:contents}
+  #leftButton,#rightButton,#downButton{display:none}
+  #rotateButton{order:1}
+  #dropButton{order:2}
+  .keys .key{padding:12px 0 10px}
+  .keys .key b{font-size:26px}
+  .keys .key small{font-size:12px}
+}
+
+/* ---- 窄螢幕 ---- */
+@container (max-width:430px){
+  .logo-main{font-size:18px;letter-spacing:.14em}
+  .logo-sub{display:none}
+  .switches{gap:6px}
+  .chip{padding:4px 8px}
+  .vfd{gap:2px 9px;padding:8px 10px 6px}
+  .digits{font-size:27px}
+  .next canvas{width:44px;height:30px}
+  .message{font-size:12px}
+  .keys{gap:10px}
+  .cluster{gap:6px}
+  .key.big b{font-size:21px}
+  .key b{font-size:17px}
+  .key small{font-size:10px}
+}
+</style>
+</head>
+<body>
+<!--
+  文字都寫在 JavaScript 的 TEXT 表裡：
+  data-text="鍵"  → 放純文字
+  data-html="鍵"  → 放含標籤的文字
+  data-label="鍵" → 設定 aria-label（給螢幕閱讀器）
+-->
+<main class="deck">
+  <header class="brand">
+    <div class="logo">
+      <span class="logo-main" data-text="title"></span>
+      <span class="logo-sub" data-text="subtitle"></span>
+    </div>
+    <div class="switches">
+      <button class="chip" id="langButton"><span data-lang="zh">中</span><span>/</span><span data-lang="en">EN</span></button>
+      <button class="chip" id="aiButton" role="switch"><i class="led"></i><span>AI</span></button>
+      <button class="chip" id="soundButton"><i class="led"></i><span id="soundText"></span></button>
+      <button class="chip help-chip" id="helpButton">?</button>
+    </div>
+  </header>
+
+  <section class="vfd">
+    <div class="next"><span class="cap" data-text="next"></span><canvas id="nextCanvas"></canvas></div>
+    <div><span class="cap" data-text="score"></span><span class="digits" id="scoreDigits" data-ghost="888888">000000</span></div>
+    <div><span class="cap" data-text="lines"></span><span class="digits" id="linesDigits" data-ghost="888">000</span></div>
+    <div><span class="cap" data-text="level"></span><span class="digits" id="levelDigits" data-ghost="88">01</span></div>
+    <div class="status">
+      <p class="message" id="message" aria-live="polite"></p>
+      <button class="play" id="playButton"><b id="playIcon">▶</b><span id="playText"></span></button>
+    </div>
+  </section>
+
+  <canvas id="board"></canvas>
+
+  <nav class="keys">
+    <div class="cluster spin">
+      <button class="key" id="leftButton" data-label="spinLeft"><b>←</b><small data-text="keyLeft"></small></button>
+      <button class="key" id="rightButton" data-label="spinRight"><b>→</b><small data-text="keyRight"></small></button>
+    </div>
+    <div class="cluster act">
+      <button class="key" id="downButton" data-label="moveDown"><b>↓</b><small data-text="keyDown"></small></button>
+      <button class="key" id="rotateButton" data-label="rotateBlock"><b>↻</b><small data-text="keyRotate"></small></button>
+      <button class="key red big" id="dropButton" data-label="dropNow"><b>⤓</b><small data-text="keyDrop"></small></button>
+    </div>
+  </nav>
+
+</main>
+
+<!-- 說明視窗：按右上角的 ? 打開 -->
+<dialog class="help-dialog" id="helpDialog">
+  <div class="help-body">
+    <h2 data-text="helpTitle"></h2>
+    <p data-text="helpRules"></p>
+    <div class="touch-help" data-html="helpTouch"></div>
+    <div class="kbd-help" data-html="helpKeys"></div>
+    <button class="help-close" id="helpClose" data-text="helpClose"></button>
+  </div>
+</dialog>
+
+<script>
+(function(){
+"use strict";
+
+/* ==========================================================
+   1. 遊戲設定（核心玩法，和之前完全相同）
+   ========================================================== */
+const COLUMNS = 16;            // 一圈有幾格
+const RINGS = 12;              // 有幾層（第 0 層在最外圈，方塊往中心掉）
+const CORE_RATIO = 0.15;       // 中央圓標的半徑，佔可玩區半徑的比例
+const LINES_PER_LEVEL = 5;     // 每消幾層升一級
+const CLEAR_DURATION = 400;    // 消除動畫的長度（毫秒）
+const SCORE_FOR_LINES = [0, 100, 300, 500, 800];  // 一次消 0～4 層的分數
+
+const PIECES = {
+  I: { color: "#3cc0cf", shape: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]] },
+  O: { color: "#f4bb12", shape: [[0,0,0,0],[0,1,1,0],[0,1,1,0],[0,0,0,0]] },
+  T: { color: "#a179e3", shape: [[0,1,0],[1,1,1],[0,0,0]] },
+  S: { color: "#74c24f", shape: [[0,1,1],[1,1,0],[0,0,0]] },
+  Z: { color: "#ef5a3e", shape: [[1,1,0],[0,1,1],[0,0,0]] },
+  J: { color: "#4b84ef", shape: [[1,0,0],[1,1,1],[0,0,0]] },
+  L: { color: "#f5934a", shape: [[0,0,1],[1,1,1],[0,0,0]] }
+};
+const PIECE_TYPES = Object.keys(PIECES);
+
+/* 唱盤的配色 */
+const COLORS = {
+  platterLight: "#ecece8", platterDark: "#9d9e98", strobe: "#3a3c3a",
+  vinyl: "#121313", groove: "rgba(255,255,255,0.035)", sheen: "rgba(255,255,255,0.09)",
+  grid: "rgba(255,255,255,0.07)", limit: "#ff5a3c",
+  labelPaper: "#efe6cf", labelInk: "#d8402a", spindle: "#c9cac4",
+  pieceEdge: "#121313", pieceHighlight: "#fbf7ec", flash: "#fff6dc"
+};
+
+/* ==========================================================
+   2. 文字（繁體中文／英文）
+   {hi}、{score} 會被換成實際數字
+   ========================================================== */
+const TEXT = {
+  zh: {
+    htmlLang: "zh-Hant-TW", title: "轉盤方塊", subtitle: "Spin Rings",
+    next: "下一個", score: "分數", lines: "層數", level: "等級",
+    msgIdle: "按 ▶ 開始　最高分 {hi}",
+    msgPlaying: "最高分 {hi}",
+    msgPaused: "暫停中，按 ▶ 繼續",
+    msgOver: "遊戲結束　最高分 {hi}",
+    msgRecord: "新紀錄！{score} 分",
+    msgDemo: "AI示範中　按任一操作鍵就能接手",
+    msgDemoOver: "示範結束，馬上重新開始",
+    msgOverAi: "遊戲結束（有 AI 幫忙，不列入最高分）",
+    aiLabel: "AI 示範模式", soundModes: { all: "音樂＋音效", effects: "只有音效", off: "靜音" },
+    keyLeft: "左轉", keyRight: "右轉", keyRotate: "旋轉", keyDown: "下移", keyDrop: "落下",
+    keyStart: "開始", keyPause: "暫停", keyResume: "繼續",
+    helpTitle: "怎麼玩", helpClose: "知道了", helpLabel: "說明",
+    helpRules: "轉動圓盤，讓方塊落在想要的位置。排滿一整圈，那一層就會消除；方塊超出紅色虛線，遊戲就結束。",
+    helpTouch: "<h3>手機操作</h3><dl>" +
+      "<dt>在唱片上左右滑</dt><dd>轉動圓盤</dd>" +
+      "<dt>點唱片／旋轉鍵</dt><dd>旋轉方塊</dd>" +
+      "<dt>往下滑／落下鍵</dt><dd>直接落下</dd>" +
+      "<dt>轉的時候第二指點一下</dt><dd>直接落下</dd></dl>",
+    helpKeys: "<h3>鍵盤操作</h3><dl>" +
+      "<dt><kbd>←</kbd><kbd>→</kbd></dt><dd>轉動圓盤</dd>" +
+      "<dt><kbd>↑</kbd></dt><dd>旋轉方塊</dd>" +
+      "<dt><kbd>↓</kbd></dt><dd>往下一格</dd>" +
+      "<dt><kbd>空白鍵</kbd></dt><dd>直接落下</dd>" +
+      "<dt><kbd>P</kbd></dt><dd>暫停</dd>" +
+      "<dt><kbd>M</kbd></dt><dd>切換聲音（音樂＋音效／只有音效／靜音）</dd>" +
+      "<dt><kbd>A</kbd></dt><dd>AI 示範</dd>" +
+      "<dt><kbd>?</kbd></dt><dd>打開這個說明</dd></dl>",
+    boardLabel: "轉盤方塊遊戲盤面", langLabel: "切換語言 / Language", soundLabel: "聲音",
+    spinLeft: "圓盤向左轉", spinRight: "圓盤向右轉", rotateBlock: "旋轉方塊", moveDown: "往下", dropNow: "直接落下"
+  },
+  en: {
+    htmlLang: "en", title: "Spin Rings", subtitle: "轉盤方塊",
+    next: "Next", score: "Score", lines: "Lines", level: "Level",
+    msgIdle: "Press ▶ to start　High score {hi}",
+    msgPlaying: "High score {hi}",
+    msgPaused: "Paused. Press ▶ to resume",
+    msgOver: "Game over　High score {hi}",
+    msgRecord: "New record! {score}",
+    msgDemo: "AI demo playing. Press any control to take over",
+    msgDemoOver: "Demo over, restarting",
+    msgOverAi: "Game over (AI helped, high score not saved)",
+    aiLabel: "AI demo mode", soundModes: { all: "Music + SFX", effects: "SFX only", off: "Muted" },
+    keyLeft: "Left", keyRight: "Right", keyRotate: "Rotate", keyDown: "Down", keyDrop: "Drop",
+    keyStart: "Start", keyPause: "Pause", keyResume: "Resume",
+    helpTitle: "How to play", helpClose: "Got it", helpLabel: "Help",
+    helpRules: "Spin the disc so the block lands where you want. Fill a whole ring to clear it. If a block crosses the red dotted line, the game is over.",
+    helpTouch: "<h3>Touch</h3><dl>" +
+      "<dt>Swipe on the record</dt><dd>Spin the disc</dd>" +
+      "<dt>Tap record / Rotate</dt><dd>Rotate block</dd>" +
+      "<dt>Swipe down / Drop</dt><dd>Drop instantly</dd>" +
+      "<dt>Second-finger tap</dt><dd>Drop while spinning</dd></dl>",
+    helpKeys: "<h3>Keyboard</h3><dl>" +
+      "<dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Spin the disc</dd>" +
+      "<dt><kbd>↑</kbd></dt><dd>Rotate block</dd>" +
+      "<dt><kbd>↓</kbd></dt><dd>Move down</dd>" +
+      "<dt><kbd>Space</kbd></dt><dd>Drop instantly</dd>" +
+      "<dt><kbd>P</kbd></dt><dd>Pause</dd>" +
+      "<dt><kbd>M</kbd></dt><dd>Sound: music + SFX / SFX only / muted</dd>" +
+      "<dt><kbd>A</kbd></dt><dd>AI demo</dd>" +
+      "<dt><kbd>?</kbd></dt><dd>Open this help</dd></dl>",
+    boardLabel: "Spin Rings game board", langLabel: "Language / 切換語言", soundLabel: "Sound",
+    spinLeft: "Spin left", spinRight: "Spin right", rotateBlock: "Rotate block", moveDown: "Down", dropNow: "Drop"
+  }
+};
+const LANGUAGES = Object.keys(TEXT);
+
+/* ==========================================================
+   3. 小工具
+   ========================================================== */
+const $ = id => document.getElementById(id);
+
+/* localStorage 在某些環境會失敗，所以包起來 */
+const storage = {
+  load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  save(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+};
+const HIGH_SCORE_KEY = "spin-rings-hi";
+const LANGUAGE_KEY = "spin-rings-lang";
+const SOUND_KEY = "spin-rings-audio";
+
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* 欄位繞一圈後接回來：-1 → 15，16 → 0 */
+const wrapColumn = column => ((column % COLUMNS) + COLUMNS) % COLUMNS;
+
+function createBoard() {
+  return Array.from({ length: RINGS }, () => new Array(COLUMNS).fill(null));
+}
+
+/* 順時針轉 90 度 */
+function rotateShape(shape) {
+  const size = shape.length;
+  return shape.map((row, y) => row.map((_, x) => shape[size - 1 - x][y]));
+}
+
+/* 對形狀裡每一個有方塊的格子做事 */
+function forEachBlock(shape, callback) {
+  shape.forEach((row, y) => row.forEach((filled, x) => { if (filled) callback(x, y); }));
+}
+
+function shuffle(list) {
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+/* 把數字補零：pad(42, 6) → "000042" */
+const pad = (number, length) => String(number).padStart(length, "0").slice(-length);
+
+/* 把 {hi} 這類記號換成數字 */
+const fill = (template, values) => template.replace(/\{(\w+)\}/g, (_, key) => values[key]);
+
+/* ==========================================================
+   4. 音效（用 Web Audio 即時合成，不需要音檔）
+   ========================================================== */
+/* 聲音只有一顆按鈕，依序切換三種模式：音樂＋音效 → 只有音效 → 靜音 */
+const SOUND_MODES = ["all", "effects", "off"];
+const MASTER_VOLUME = 1.3;
+let soundMode = storage.load(SOUND_KEY);
+if (!SOUND_MODES.includes(soundMode)) soundMode = "all";
+let audioContext = null;
+let masterGain = null;   // 總音量
+
+/* 所有聲音 → 總音量 → 壓縮器（避免大聲時破音） → 喇叭 */
+
+/* 瀏覽器規定：要在玩家按下按鍵或按鈕之後，才能開始發出聲音 */
+function getAudioContext() {
+  if (!audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    audioContext = new AudioContextClass();
+    const compressor = audioContext.createDynamicsCompressor();
+    compressor.threshold.value = -12;
+    compressor.ratio.value = 4;
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = MASTER_VOLUME;
+    masterGain.connect(compressor).connect(audioContext.destination);
+  }
+  if (audioContext.state === "suspended") audioContext.resume();
+  return audioContext;
+}
+
+/* 發出一個音：頻率 frequency（Hz），長度 duration（秒） */
+function playTone(frequency, duration, options = {}) {
+  const { wave = "square", volume = 0.08, delay = 0, slideTo = null } = options;
+  const ac = getAudioContext();
+  if (!ac) return;
+  const startTime = ac.currentTime + delay;
+  const oscillator = ac.createOscillator();
+  const gain = ac.createGain();
+  oscillator.type = wave;
+  oscillator.frequency.setValueAtTime(frequency, startTime);
+  if (slideTo) oscillator.frequency.exponentialRampToValueAtTime(slideTo, startTime + duration);
+  gain.gain.setValueAtTime(volume, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);   // 慢慢變小聲
+  oscillator.connect(gain).connect(masterGain);
+  oscillator.start(startTime);
+  oscillator.stop(startTime + duration + 0.02);
+}
+
+/* 依序播放好幾個音（琶音） */
+function playNotes(frequencies, gap, duration, volume) {
+  frequencies.forEach((frequency, i) => playTone(frequency, duration, { wave: "triangle", volume, delay: i * gap }));
+}
+
+const SOUNDS = {
+  move:     () => playTone(440, 0.05, { volume: 0.09 }),
+  rotate:   () => playTone(660, 0.07, { wave: "triangle", volume: 0.2, slideTo: 880 }),
+  lock:     () => playTone(170, 0.12, { wave: "triangle", volume: 0.4, slideTo: 90 }),
+  hardDrop: () => playTone(320, 0.14, { wave: "sawtooth", volume: 0.14, slideTo: 80 }),
+  clear:    count => playNotes([523, 659, 784, 1047, 1319].slice(0, count + 1), 0.07, 0.2, 0.28),  // 消越多層，音越多
+  levelUp:  () => playNotes([784, 988, 1175, 1568], 0.06, 0.16, 0.22),
+  start:    () => playNotes([392, 523, 659], 0.08, 0.14, 0.25),
+  gameOver: () => playNotes([392, 330, 262, 196], 0.16, 0.28, 0.28)
+};
+
+function playSound(name, ...args) {
+  if (soundMode !== "off") SOUNDS[name](...args);
+}
+
+/* ==========================================================
+   4.5 背景音樂（同樣即時合成）
+   Am → F → C → G 四小節循環，有鼓、貝斯、琶音、和弦，
+   再加一點黑膠的沙沙聲。等級越高，節奏越快。
+   ========================================================== */
+const music = {
+  timer: null,       // 排程用的計時器
+  nextTime: 0,       // 下一個音要在什麼時間點播
+  step: 0,           // 目前播到第幾個 16 分音符（一輪 64 個＝4 小節）
+  output: null,      // 音樂專用的音量
+  noise: null        // 白噪音（做鼓聲和沙沙聲用）
+};
+
+const CHORDS = [   // 用 MIDI 音高：60 = 中央 C
+  { bass: 45, notes: [57, 60, 64] },   // Am
+  { bass: 41, notes: [57, 60, 65] },   // F
+  { bass: 48, notes: [55, 60, 64] },   // C
+  { bass: 43, notes: [55, 59, 62] }    // G
+];
+
+const midiToFrequency = note => 440 * Math.pow(2, (note - 69) / 12);
+const musicTempo = () => Math.min(150, 92 + (level() - 1) * 6);   // 每分鐘拍數
+const sixteenthLength = () => 60 / musicTempo() / 4;               // 一個 16 分音符幾秒
+
+function musicOutput() {
+  const ac = audioContext;
+  if (!music.output) {
+    music.output = ac.createGain();
+    music.output.gain.value = 0.55;     // 音樂比音效小聲一點，不會蓋過音效
+    music.output.connect(masterGain);
+  }
+  if (!music.noise) {
+    music.noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const data = music.noise.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  }
+  return music.output;
+}
+
+/* 一個有音高的音 */
+function musicNote(time, note, duration, wave, volume) {
+  const ac = audioContext;
+  const oscillator = ac.createOscillator();
+  const gain = ac.createGain();
+  oscillator.type = wave;
+  oscillator.frequency.value = midiToFrequency(note);
+  gain.gain.setValueAtTime(0.0001, time);
+  gain.gain.linearRampToValueAtTime(volume, time + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+  oscillator.connect(gain).connect(musicOutput());
+  oscillator.start(time);
+  oscillator.stop(time + duration + 0.02);
+}
+
+/* 一段濾過的雜音（小鼓、鈸、沙沙聲） */
+function musicNoise(time, duration, volume, filterType, frequency) {
+  const ac = audioContext;
+  const source = ac.createBufferSource();
+  const filter = ac.createBiquadFilter();
+  const gain = ac.createGain();
+  const output = musicOutput();
+  source.buffer = music.noise;
+  filter.type = filterType;
+  filter.frequency.value = frequency;
+  gain.gain.setValueAtTime(volume, time);
+  gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+  source.connect(filter).connect(gain).connect(output);
+  source.start(time, Math.random() * 0.5);
+  source.stop(time + duration + 0.02);
+}
+
+/* 大鼓：音高快速往下掉的低音 */
+function musicKick(time) {
+  const ac = audioContext;
+  const oscillator = ac.createOscillator();
+  const gain = ac.createGain();
+  oscillator.frequency.setValueAtTime(140, time);
+  oscillator.frequency.exponentialRampToValueAtTime(45, time + 0.12);
+  gain.gain.setValueAtTime(0.55, time);
+  gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.16);
+  oscillator.connect(gain).connect(musicOutput());
+  oscillator.start(time);
+  oscillator.stop(time + 0.18);
+}
+
+/* 播第 step 個 16 分音符該有的聲音 */
+function playMusicStep(step, time) {
+  const chord = CHORDS[Math.floor(step / 16) % CHORDS.length];
+  const beat = step % 16;
+
+  if (beat === 0 || beat === 8 || beat === 10) musicKick(time);                       // 大鼓
+  if (beat === 4 || beat === 12) musicNoise(time, 0.12, 0.22, "bandpass", 1800);      // 小鼓
+  if (beat % 2 === 0) musicNoise(time, 0.03, beat % 4 === 2 ? 0.08 : 0.04, "highpass", 7000);  // 鈸
+
+  if ([0, 3, 6, 8, 11, 14].includes(beat)) {                                          // 貝斯
+    musicNote(time, chord.bass + (beat === 6 || beat === 14 ? 12 : 0), 0.2, "triangle", 0.35);
+  }
+  if (beat % 2 === 0) {                                                               // 琶音
+    const order = [0, 1, 2, 1][(beat / 2) % 4];
+    musicNote(time, chord.notes[order] + 12, 0.15, "square", 0.04);
+  }
+  if (beat === 0) {                                                                   // 和弦
+    chord.notes.forEach(note => musicNote(time, note, sixteenthLength() * 15, "triangle", 0.06));
+  }
+  if (Math.random() < 0.18) {                                                         // 黑膠沙沙聲
+    musicNoise(time + Math.random() * 0.05, 0.01, 0.06, "highpass", 3000);
+  }
+}
+
+/* 排程：每 25 毫秒檢查一次，把接下來 0.12 秒內要播的音先排好（節奏才會穩） */
+function scheduleMusic() {
+  const ac = audioContext;
+  while (music.nextTime < ac.currentTime + 0.12) {
+    playMusicStep(music.step, music.nextTime);
+    music.nextTime += sixteenthLength();
+    music.step = (music.step + 1) % 64;
+  }
+}
+
+function startMusic() {
+  const ac = getAudioContext();
+  if (!ac) return;
+  music.nextTime = ac.currentTime + 0.05;
+  music.timer = setInterval(scheduleMusic, 25);
+}
+
+function stopMusic() {
+  clearInterval(music.timer);
+  music.timer = null;
+}
+
+/* 每一幀檢查：遊戲進行中、而且是「音樂＋音效」模式 → 播；否則停 */
+function syncMusic() {
+  const shouldPlay = soundMode === "all" && game.mode === "playing" && audioContext !== null;
+  if (shouldPlay && !music.timer) startMusic();
+  if (!shouldPlay && music.timer) stopMusic();
+}
+
+
+/* ==========================================================
+   5. 遊戲狀態
+   ========================================================== */
+const game = {
+  mode: "title",       // "title" | "playing" | "paused" | "over"
+  board: createBoard(),// board[層][欄] = 方塊種類（"I"、"T"…）或 null
+  piece: null,         // 正在落下的方塊 { type, shape, column, ring }
+  nextType: null,      // 下一個方塊的種類
+  bag: [],             // 7 種方塊洗牌後依序拿出，避免一直不來
+  lines: 0,
+  score: 0,
+  fallTimer: 0,        // 距離上次自動下落經過幾毫秒
+  clearingRings: [],   // 正在消除的層
+  clearTimer: 0,
+  overTime: 0,         // 遊戲結束的時間（避免馬上誤按重來）
+  isNewRecord: false,
+  usedAi: false        // 這一局 AI 有沒有出手（有的話不列入最高分）
+};
+
+/* 圓盤的角度，單位是「格」：1 = 轉一格 */
+const view = {
+  targetAngle: 0,      // 應該轉到的角度
+  shownAngle: 0        // 畫面上顯示的角度（慢慢追上 targetAngle）
+};
+
+let highScore = Number(storage.load(HIGH_SCORE_KEY)) || 0;
+
+let language = storage.load(LANGUAGE_KEY);
+if (!LANGUAGES.includes(language)) {
+  language = (navigator.language || "").toLowerCase().startsWith("en") ? "en" : "zh";
+}
+const text = key => TEXT[language][key];
+
+const level = () => 1 + Math.floor(game.lines / LINES_PER_LEVEL);
+const fallInterval = () => Math.max(110, 1000 * Math.pow(0.86, level() - 1));
+
+/* ==========================================================
+   6. 方塊的動作
+   ========================================================== */
+
+/* 方塊放在 (column, ring) 會不會撞到東西 */
+function hits(shape, column, ring) {
+  let hit = false;
+  forEachBlock(shape, (x, y) => {
+    const r = ring + y;
+    if (r >= RINGS) hit = true;                                            // 撞到中央
+    else if (r >= 0 && game.board[r][wrapColumn(column + x)]) hit = true;  // 撞到別的方塊
+  });
+  return hit;
+}
+
+function takeFromBag() {
+  if (game.bag.length === 0) game.bag = shuffle(PIECE_TYPES.slice());
+  return game.bag.pop();
+}
+
+/* 出新方塊：放在現在畫面的正上方 */
+function spawnPiece() {
+  const type = game.nextType;
+  game.nextType = takeFromBag();
+  const shape = PIECES[type].shape;
+  const center = (shape.length - 1) / 2;
+  const column = Math.round(view.targetAngle - center);
+  view.targetAngle = column + center;
+  game.piece = { type, shape, column, ring: shape.length === 4 ? -1 : 0 };
+  game.fallTimer = 0;
+  if (hits(shape, column, game.piece.ring)) endGame();
+}
+
+function canControl() {
+  return game.mode === "playing" && game.piece !== null;
+}
+
+/* 左右：方塊換欄，圓盤跟著轉，所以方塊看起來一直在正上方 */
+function movePiece(direction) {
+  if (!canControl()) return;
+  const p = game.piece;
+  if (!hits(p.shape, p.column + direction, p.ring)) {
+    p.column += direction;
+    view.targetAngle += direction;
+    playSound("move");
+  }
+}
+
+/* 旋轉：轉不下去時，左右挪一點再試 */
+function rotatePiece(counterClockwise) {
+  if (!canControl()) return;
+  const p = game.piece;
+  let shape = rotateShape(p.shape);
+  if (counterClockwise) shape = rotateShape(rotateShape(shape));
+  for (const shift of [0, 1, -1, 2, -2]) {
+    if (!hits(shape, p.column + shift, p.ring)) {
+      p.shape = shape;
+      p.column += shift;
+      view.targetAngle += shift;
+      playSound("rotate");
+      return;
+    }
+  }
+}
+
+/* 往下一層；下不去就固定 */
+function softDrop() {
+  if (!canControl()) return;
+  const p = game.piece;
+  game.fallTimer = 0;
+  if (hits(p.shape, p.column, p.ring + 1)) lockPiece();
+  else p.ring++;
+}
+
+function hardDrop() {
+  if (!canControl()) return;
+  const p = game.piece;
+  while (!hits(p.shape, p.column, p.ring + 1)) p.ring++;
+  playSound("hardDrop");
+  lockPiece();
+}
+
+/* 落點（預覽用） */
+function landingRing(p) {
+  let ring = p.ring;
+  while (!hits(p.shape, p.column, ring + 1)) ring++;
+  return ring;
+}
+
+/* 把方塊固定到盤面上，檢查有沒有排滿的層 */
+function lockPiece() {
+  const p = game.piece;
+  let outside = false;
+  forEachBlock(p.shape, (x, y) => {
+    const r = p.ring + y;
+    if (r < 0) outside = true;
+    else game.board[r][wrapColumn(p.column + x)] = p.type;
+  });
+  game.piece = null;
+  if (outside) { endGame(); return; }
+  playSound("lock");
+
+  const fullRings = [];
+  game.board.forEach((ring, index) => { if (ring.every(Boolean)) fullRings.push(index); });
+
+  if (fullRings.length > 0) {
+    game.clearingRings = fullRings;   // 先播消除動畫，結束後才真的刪掉
+    game.clearTimer = 0;
+    playSound("clear", fullRings.length);
+  } else {
+    spawnPiece();
+  }
+}
+
+/* 刪掉排滿的層，外面的層往中心靠 */
+function finishClearing() {
+  const count = game.clearingRings.length;
+  for (const ring of game.clearingRings) {
+    game.board.splice(ring, 1);
+    game.board.unshift(new Array(COLUMNS).fill(null));
+  }
+  game.clearingRings = [];
+  const oldLevel = level();
+  game.lines += count;
+  game.score += SCORE_FOR_LINES[count] * level();
+  if (level() > oldLevel) playSound("levelUp");
+  spawnPiece();
+}
+
+/* ==========================================================
+   6.5 AI 示範模式
+   做法：把方塊的 4 種方向 × 16 欄全部試一遍，
+   用「高度、洞、凹凸、消除層數」幫每個結果打分數，選最高分的。
+   之後像真人一樣一步一步按：先旋轉、再轉圓盤、最後落下。
+   ========================================================== */
+/* 速度設定成「聰明小孩」：會先想一下，按鍵不快不慢，對準了還會再確認一下才放 */
+const AI_THINK_TIME = [450, 800];  // 新方塊出來後，先想多久（毫秒，隨機在這範圍內）
+const AI_PRESS_TIME = [170, 260];  // 每按一次鍵的間隔
+const AI_CHECK_TIME = [200, 350];  // 對準之後，按落下前的停頓
+const AI_RESTART_TIME = 2500;      // 示範結束後幾毫秒重新開始
+const AI_WEIGHTS = {
+  height: -0.51,   // 堆得越高越不好
+  lines: 0.76,     // 消越多層越好
+  holes: -0.36,    // 底下被蓋住的空格越多越不好
+  bumpy: -0.18,    // 相鄰兩欄高低差越大越不好
+  danger: -1       // 快碰到紅線時額外扣分
+};
+
+const ai = {
+  on: false,
+  plan: null,        // { piece, rotations, column }
+  wait: 0,           // 還要等多久才按下一個鍵
+  restartTimer: 0
+};
+
+/* 在 [最小, 最大] 之間隨便挑一個時間，讓節奏不要像機器 */
+const randomTime = ([min, max]) => min + Math.random() * (max - min);
+
+/* 在複製的盤面上放方塊，回傳放完（含消除）後的盤面 */
+function simulatePlacement(shape, column, ring) {
+  const board = game.board.map(row => row.slice());
+  let overflow = false;
+  forEachBlock(shape, (x, y) => {
+    const r = ring + y;
+    if (r < 0) overflow = true;
+    else board[r][wrapColumn(column + x)] = "X";
+  });
+  const remaining = board.filter(row => !row.every(Boolean));
+  const cleared = RINGS - remaining.length;
+  while (remaining.length < RINGS) remaining.unshift(new Array(COLUMNS).fill(null));
+  return { board: remaining, cleared, overflow };
+}
+
+/* 幫一個盤面打分數（越高越好） */
+function scoreBoard(board, cleared) {
+  const heights = [];
+  let holes = 0;
+  for (let column = 0; column < COLUMNS; column++) {
+    let top = RINGS;
+    for (let ring = 0; ring < RINGS; ring++) {
+      if (board[ring][column]) { top = ring; break; }
+    }
+    heights.push(RINGS - top);
+    for (let ring = top + 1; ring < RINGS; ring++) {
+      if (!board[ring][column]) holes++;
+    }
+  }
+  let totalHeight = 0, bumpiness = 0, maxHeight = 0;
+  for (let column = 0; column < COLUMNS; column++) {
+    totalHeight += heights[column];
+    bumpiness += Math.abs(heights[column] - heights[(column + 1) % COLUMNS]);   // 圓的，最後一欄接回第一欄
+    maxHeight = Math.max(maxHeight, heights[column]);
+  }
+  return AI_WEIGHTS.height * totalHeight
+       + AI_WEIGHTS.lines * cleared
+       + AI_WEIGHTS.holes * holes
+       + AI_WEIGHTS.bumpy * bumpiness
+       + AI_WEIGHTS.danger * Math.max(0, maxHeight - (RINGS - 5));
+}
+
+/* 找出最好的放法 */
+function findBestMove(piece) {
+  let best = null;
+  let shape = piece.shape;
+  for (let rotations = 0; rotations < 4; rotations++) {
+    for (let column = 0; column < COLUMNS; column++) {
+      if (hits(shape, column, piece.ring)) continue;
+      let ring = piece.ring;
+      while (!hits(shape, column, ring + 1)) ring++;
+      const result = simulatePlacement(shape, column, ring);
+      const score = result.overflow ? -Infinity : scoreBoard(result.board, result.cleared);
+      if (!best || score > best.score) best = { score, rotations, column };
+    }
+    shape = rotateShape(shape);
+  }
+  return best;
+}
+
+/* AI 做一個動作，並決定下一個動作要等多久 */
+function aiStep() {
+  const p = game.piece;
+
+  /* 新方塊：先想好要放哪裡，想的這段時間不動 */
+  if (!ai.plan || ai.plan.piece !== p) {
+    const best = findBestMove(p);
+    if (!best) { hardDrop(); return; }
+    ai.plan = { piece: p, rotations: best.rotations, column: best.column, checked: false };
+    ai.wait = randomTime(AI_THINK_TIME);
+    return;
+  }
+  const plan = ai.plan;
+  ai.wait = randomTime(AI_PRESS_TIME);
+
+  /* 1. 先轉到想要的方向 */
+  if (plan.rotations > 0) {
+    const before = p.shape;
+    rotatePiece(false);
+    if (p.shape === before) { hardDrop(); return; }   // 轉不動就直接放
+    plan.rotations--;
+    return;
+  }
+
+  /* 2. 再轉圓盤，對準想要的欄 */
+  let distance = wrapColumn(plan.column - p.column);   // 往右要走幾格
+  if (distance > COLUMNS / 2) distance -= COLUMNS;      // 往左比較近就往左
+  if (distance !== 0) {
+    const before = p.column;
+    movePiece(Math.sign(distance));
+    if (p.column === before) hardDrop();                // 被擋住就直接放
+    return;
+  }
+
+  /* 3. 對準了，停一下確認，再按落下 */
+  if (!plan.checked) {
+    plan.checked = true;
+    ai.wait = randomTime(AI_CHECK_TIME);
+    return;
+  }
+  hardDrop();
+}
+
+function updateAi(deltaTime) {
+  if (!ai.on) return;
+  if (game.mode === "playing" && game.piece) {
+    ai.wait -= deltaTime;
+    if (ai.wait <= 0) aiStep();
+  }
+  if (game.mode === "over") {
+    ai.restartTimer += deltaTime;
+    if (ai.restartTimer >= AI_RESTART_TIME) startGame();   // 示範模式自動重來
+  }
+}
+
+/* 開關 AI。從待機或結束畫面打開時，直接開始一局示範 */
+function toggleAi() {
+  ai.on = !ai.on;
+  ai.plan = null;
+  ai.wait = 0;
+  ai.restartTimer = 0;
+  if (ai.on) {
+    if (game.mode === "title" || game.mode === "over") startGame();
+    else { game.usedAi = true; resumeGame(); }
+  }
+  updateAiButton();
+}
+
+/* 玩家自己按了操作鍵 → AI 交出控制權 */
+function takeOverFromAi() {
+  if (ai.on) toggleAi();
+}
+
+/* ==========================================================
+   7. 遊戲流程（開始／暫停／結束）
+   ========================================================== */
+function startGame() {
+  game.board = createBoard();
+  game.bag = [];
+  game.lines = 0;
+  game.score = 0;
+  game.piece = null;
+  game.clearingRings = [];
+  game.isNewRecord = false;
+  game.usedAi = ai.on;
+  ai.plan = null;
+  ai.restartTimer = 0;
+  game.nextType = takeFromBag();
+  view.targetAngle = Math.round(view.shownAngle);
+  game.mode = "playing";
+  playSound("start");
+  spawnPiece();
+}
+
+function endGame() {
+  game.mode = "over";
+  game.piece = null;
+  game.overTime = performance.now();
+  playSound("gameOver");
+  game.isNewRecord = !game.usedAi && game.score > highScore;
+  if (game.isNewRecord) {
+    highScore = game.score;
+    storage.save(HIGH_SCORE_KEY, String(highScore));
+  }
+}
+
+function pauseGame() {
+  if (game.mode === "playing") game.mode = "paused";
+}
+
+function resumeGame() {
+  if (game.mode === "paused") game.mode = "playing";
+}
+
+/* ▶ 鍵：依狀態決定是開始、暫停還是繼續 */
+function pressPlay() {
+  if (game.mode === "playing") pauseGame();
+  else if (game.mode === "paused") resumeGame();
+  else if (game.mode === "title" || performance.now() - game.overTime > 600) startGame();
+}
+
+/* ==========================================================
+   8. 顯示器與按鍵上的文字（HTML 部分）
+   ========================================================== */
+
+/* 只有內容真的改變時才寫入，避免每一幀都動到網頁 */
+function setText(element, value) {
+  if (element.textContent !== value) element.textContent = value;
+}
+
+function updateDisplay() {
+  setText($("scoreDigits"), pad(game.score, 6));
+  setText($("linesDigits"), pad(game.lines, 3));
+  setText($("levelDigits"), pad(level(), 2));
+
+  const values = { hi: highScore, score: game.score };
+  let message = text("msgIdle");
+  if (game.mode === "playing") message = text(ai.on ? "msgDemo" : "msgPlaying");
+  if (game.mode === "paused") message = text("msgPaused");
+  if (game.mode === "over") {
+    if (ai.on) message = text("msgDemoOver");
+    else if (game.isNewRecord) message = text("msgRecord");
+    else message = text(game.usedAi ? "msgOverAi" : "msgOver");
+  }
+  setText($("message"), fill(message, values));
+
+  const playLabel = game.mode === "playing" ? "keyPause" : game.mode === "paused" ? "keyResume" : "keyStart";
+  setText($("playIcon"), game.mode === "playing" ? "❚❚" : "▶");
+  setText($("playText"), text(playLabel));
+  $("playButton").setAttribute("aria-label", text(playLabel));
+}
+
+function updateSoundButton() {
+  const button = $("soundButton");
+  const name = text("soundModes")[soundMode];
+  button.classList.toggle("lit", soundMode !== "off");
+  $("soundText").textContent = name;
+  button.setAttribute("aria-label", text("soundLabel") + "：" + name);
+}
+
+/* 音樂＋音效 → 只有音效 → 靜音 → 音樂＋音效… */
+function cycleSound() {
+  soundMode = SOUND_MODES[(SOUND_MODES.indexOf(soundMode) + 1) % SOUND_MODES.length];
+  storage.save(SOUND_KEY, soundMode);
+  updateSoundButton();
+  playSound("lock");   // 有聲音的模式給一聲提示
+}
+
+function updateAiButton() {
+  const button = $("aiButton");
+  button.classList.toggle("lit", ai.on);
+  button.setAttribute("aria-checked", String(ai.on));
+  button.setAttribute("aria-label", text("aiLabel"));
+}
+
+function applyLanguage() {
+  const t = TEXT[language];
+  document.documentElement.lang = t.htmlLang;
+  document.title = t.title;
+  document.querySelectorAll("[data-text]").forEach(el => { el.textContent = t[el.dataset.text]; });
+  document.querySelectorAll("[data-html]").forEach(el => { el.innerHTML = t[el.dataset.html]; });
+  document.querySelectorAll("[data-label]").forEach(el => { el.setAttribute("aria-label", t[el.dataset.label]); });
+  document.querySelectorAll("[data-lang]").forEach(el => { el.classList.toggle("on", el.dataset.lang === language); });
+  $("langButton").setAttribute("aria-label", t.langLabel);
+  $("helpButton").setAttribute("aria-label", t.helpLabel);
+  $("board").setAttribute("aria-label", t.boardLabel);
+  updateSoundButton();
+  updateAiButton();
+  updateDisplay();
+}
+
+function switchLanguage() {
+  language = LANGUAGES[(LANGUAGES.indexOf(language) + 1) % LANGUAGES.length];
+  storage.save(LANGUAGE_KEY, language);
+  applyLanguage();
+}
+
+/* ==========================================================
+   9. 繪圖：唱盤（canvas）
+   ========================================================== */
+const canvas = $("board");
+const ctx = canvas.getContext("2d");
+const nextCanvas = $("nextCanvas");
+const nextCtx = nextCanvas.getContext("2d");
+const layout = {};   // 尺寸資料，畫面大小改變時重算
+
+/* 讓 canvas 的實際像素配合螢幕解析度 */
+function fitCanvas(target, context) {
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const rect = target.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  if (target.width !== width * pixelRatio || target.height !== height * pixelRatio) {
+    target.width = width * pixelRatio;
+    target.height = height * pixelRatio;
+  }
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  return { width, height };
+}
+
+function updateLayout() {
+  const { width } = fitCanvas(canvas, ctx);
+  layout.width = width;
+  layout.center = width / 2;
+  layout.platterRadius = width / 2 - 1;            // 銀色轉盤
+  layout.recordRadius = width / 2 * 0.92;          // 黑膠唱片
+  layout.outerRadius = layout.recordRadius * 0.965; // 可玩區的最外圈（紅色虛線）
+  layout.coreRadius = layout.outerRadius * CORE_RATIO;
+  layout.ringWidth = (layout.outerRadius - layout.coreRadius) / RINGS;
+  layout.cellAngle = Math.PI * 2 / COLUMNS;        // 一格佔幾弧度
+}
+
+/* 某欄的中心角度（正上方是 -90°） */
+function columnAngle(column, rotation) {
+  return -Math.PI / 2 + (column - rotation) * layout.cellAngle;
+}
+
+/* 從中心往某個角度走 radius 的位置 */
+function pointAt(angle, radius) {
+  return [layout.center + Math.cos(angle) * radius, layout.center + Math.sin(angle) * radius];
+}
+
+function traceCircle(radius) {
+  ctx.beginPath();
+  ctx.arc(layout.center, layout.center, radius, 0, Math.PI * 2);
+}
+
+/* 描出一格（扇形的一小塊） */
+function traceCell(ring, column, rotation) {
+  const outer = layout.outerRadius - ring * layout.ringWidth;
+  const inner = outer - layout.ringWidth;
+  const middle = columnAngle(column, rotation);
+  const half = layout.cellAngle / 2;
+  ctx.beginPath();
+  ctx.arc(layout.center, layout.center, outer, middle - half, middle + half);
+  ctx.arc(layout.center, layout.center, inner, middle + half, middle - half, true);
+  ctx.closePath();
+}
+
+/* 銀色轉盤，邊緣的頻閃點會跟著轉 */
+function drawPlatter() {
+  const { center, platterRadius, recordRadius } = layout;
+  const gradient = ctx.createLinearGradient(0, 0, 0, layout.width);
+  gradient.addColorStop(0, COLORS.platterLight);
+  gradient.addColorStop(1, COLORS.platterDark);
+  ctx.fillStyle = gradient;
+  traceCircle(platterRadius);
+  ctx.fill();
+
+  const dotRadius = (platterRadius + recordRadius) / 2;
+  const turn = -view.shownAngle * layout.cellAngle;
+  ctx.fillStyle = COLORS.strobe;
+  for (let i = 0; i < 72; i++) {
+    const [x, y] = pointAt(turn + i / 72 * Math.PI * 2, dotRadius);
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(1, layout.width * 0.0028), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1;
+  traceCircle(platterRadius);
+  ctx.stroke();
+}
+
+/* 黑膠唱片：細細的溝紋＋固定不動的反光 */
+function drawRecord() {
+  const { center, recordRadius, coreRadius } = layout;
+  ctx.fillStyle = COLORS.vinyl;
+  traceCircle(recordRadius);
+  ctx.fill();
+
+  ctx.strokeStyle = COLORS.groove;
+  ctx.lineWidth = 1;
+  for (let r = coreRadius * 1.1; r < recordRadius - 2; r += 3) {
+    traceCircle(r);
+    ctx.stroke();
+  }
+
+  if (ctx.createConicGradient) {
+    const sheen = ctx.createConicGradient(-Math.PI / 4, center, center);
+    sheen.addColorStop(0, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.07, COLORS.sheen);
+    sheen.addColorStop(0.14, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.5, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.57, COLORS.sheen);
+    sheen.addColorStop(0.64, "rgba(255,255,255,0)");
+    sheen.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = sheen;
+    traceCircle(recordRadius);
+    ctx.fill();
+  }
+}
+
+/* 格線（跟著圓盤轉）與最外圈的紅色虛線 */
+function drawGrid() {
+  const { outerRadius, coreRadius, ringWidth, cellAngle } = layout;
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 1;
+  for (let column = 0; column < COLUMNS; column++) {
+    const angle = columnAngle(column, view.shownAngle) - cellAngle / 2;
+    const [x1, y1] = pointAt(angle, coreRadius);
+    const [x2, y2] = pointAt(angle, outerRadius);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+  for (let ring = 1; ring < RINGS; ring++) {
+    traceCircle(outerRadius - ring * ringWidth);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = COLORS.limit;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 5]);
+  traceCircle(outerRadius);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+/* 已經堆好的方塊；消除中的層會閃爍 */
+function drawBoard() {
+  const flashOn = !reduceMotion && Math.floor(game.clearTimer / 80) % 2 === 0;
+  ctx.strokeStyle = COLORS.pieceEdge;
+  ctx.lineWidth = 1.5;
+  for (let ring = 0; ring < RINGS; ring++) {
+    const isClearing = game.clearingRings.includes(ring);
+    for (let column = 0; column < COLUMNS; column++) {
+      const type = game.board[ring][column];
+      if (!type) continue;
+      traceCell(ring, column, view.shownAngle);
+      ctx.fillStyle = isClearing && (flashOn || reduceMotion) ? COLORS.flash : PIECES[type].color;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+}
+
+/* 落下中的方塊與落點。用 targetAngle 畫，所以永遠在正上方 */
+function drawPiece() {
+  const p = game.piece;
+  if (!p) return;
+  const color = PIECES[p.type].color;
+  const ghostRing = landingRing(p);
+
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.setLineDash([3, 3]);
+  forEachBlock(p.shape, (x, y) => {
+    if (ghostRing + y < 0) return;
+    traceCell(ghostRing + y, p.column + x, view.targetAngle);
+    ctx.globalAlpha = 0.16;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = COLORS.pieceHighlight;
+  forEachBlock(p.shape, (x, y) => {
+    if (p.ring + y < 0) return;
+    traceCell(p.ring + y, p.column + x, view.targetAngle);
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+/* 中央的唱片圓標：紅色記號跟著轉，看得出轉了多少 */
+function drawLabel() {
+  const { center, coreRadius } = layout;
+  const radius = coreRadius * 0.94;
+  const turn = -view.shownAngle * layout.cellAngle;
+
+  ctx.fillStyle = COLORS.labelPaper;
+  traceCircle(radius);
+  ctx.fill();
+
+  ctx.strokeStyle = COLORS.labelInk;
+  ctx.lineWidth = Math.max(1, radius * 0.08);
+  traceCircle(radius * 0.8);
+  ctx.stroke();
+
+  ctx.fillStyle = COLORS.labelInk;
+  ctx.beginPath();
+  ctx.arc(center, center, radius * 0.66, turn - Math.PI / 2 - 0.5, turn - Math.PI / 2 + 0.5);
+  ctx.arc(center, center, radius * 0.36, turn - Math.PI / 2 + 0.5, turn - Math.PI / 2 - 0.5, true);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.spindle;
+  traceCircle(radius * 0.16);
+  ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  traceCircle(radius * 0.07);
+  ctx.fill();
+}
+
+/* 顯示器裡的「下一個」方塊 */
+function drawNext() {
+  const { width, height } = fitCanvas(nextCanvas, nextCtx);
+  nextCtx.clearRect(0, 0, width, height);
+  if (game.mode === "title" || !game.nextType) return;
+
+  const { shape, color } = PIECES[game.nextType];
+  let minX = 9, maxX = -1, minY = 9, maxY = -1;
+  forEachBlock(shape, (x, y) => {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  });
+  const columns = maxX - minX + 1, rows = maxY - minY + 1;
+  const size = Math.min(width / 4.4, height / 2.6);
+  const left = (width - columns * size) / 2;
+  const top = (height - rows * size) / 2;
+
+  nextCtx.fillStyle = color;
+  nextCtx.shadowColor = color;
+  nextCtx.shadowBlur = 6;
+  forEachBlock(shape, (x, y) => {
+    nextCtx.fillRect(left + (x - minX) * size + 0.5, top + (y - minY) * size + 0.5, size - 1, size - 1);
+  });
+  nextCtx.shadowBlur = 0;
+}
+
+function render() {
+  updateLayout();
+  ctx.clearRect(0, 0, layout.width, layout.width);
+  drawPlatter();
+  drawRecord();
+  drawGrid();
+  drawBoard();
+  drawPiece();
+  drawLabel();
+  drawNext();
+  updateDisplay();
+}
+
+/* ==========================================================
+   10. 每一幀的更新
+   ========================================================== */
+function update(deltaTime) {
+  if (game.mode === "title" && !reduceMotion) {
+    view.targetAngle += deltaTime * 0.0006;      // 待機時唱盤慢慢轉
+  }
+
+  updateAi(deltaTime);
+  syncMusic();
+
+  if (game.mode === "playing") {
+    if (game.clearingRings.length > 0) {
+      game.clearTimer += deltaTime;
+      if (game.clearTimer >= CLEAR_DURATION) finishClearing();
+    } else if (game.piece) {
+      game.fallTimer += deltaTime;
+      if (game.fallTimer >= fallInterval()) softDrop();
+    }
+  }
+
+  /* 顯示角度平滑地追上目標角度（減少動態時直接跳過去） */
+  const follow = reduceMotion ? 1 : Math.min(1, deltaTime * 0.02);
+  view.shownAngle += (view.targetAngle - view.shownAngle) * follow;
+}
+
+let lastTime = 0;
+function loop(time) {
+  const deltaTime = Math.min(100, time - lastTime || 0);   // 切回分頁時避免一次跳太多
+  lastTime = time;
+  update(deltaTime);
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ==========================================================
+   11. 操作（鍵盤與按鍵）
+   ========================================================== */
+
+/* 鍵盤 → 動作，以及要一起「按下去」的實體按鍵 */
+const PLAY_KEYS = {
+  ArrowLeft:  { action: () => movePiece(-1),      button: "leftButton" },
+  ArrowRight: { action: () => movePiece(1),       button: "rightButton" },
+  ArrowUp:    { action: () => rotatePiece(false), button: "rotateButton" },
+  x:          { action: () => rotatePiece(false), button: "rotateButton" },
+  X:          { action: () => rotatePiece(false), button: "rotateButton" },
+  z:          { action: () => rotatePiece(true),  button: "rotateButton" },
+  Z:          { action: () => rotatePiece(true),  button: "rotateButton" },
+  ArrowDown:  { action: softDrop,                 button: "downButton" },
+  " ":        { action: hardDrop,                 button: "dropButton" },
+  p:          { action: pauseGame,                button: "playButton" },
+  P:          { action: pauseGame,                button: "playButton" },
+  Escape:     { action: pauseGame,                button: "playButton" }
+};
+
+/* 用鍵盤操作時，畫面上的按鍵也短暫按下去 */
+function flashButton(id) {
+  const button = $(id);
+  button.classList.add("pressed");
+  setTimeout(() => button.classList.remove("pressed"), 110);
+}
+
+/* ---- 說明視窗：打開時暫停遊戲，關掉後自動繼續 ---- */
+const helpDialog = $("helpDialog");
+let resumeAfterHelp = false;
+
+function openHelp() {
+  if (helpDialog.open) return;
+  resumeAfterHelp = game.mode === "playing";
+  pauseGame();
+  helpDialog.showModal();
+}
+helpDialog.addEventListener("close", () => {
+  if (resumeAfterHelp) resumeGame();
+  resumeAfterHelp = false;
+});
+helpDialog.addEventListener("click", event => {        // 點視窗外面也能關
+  if (event.target === helpDialog) helpDialog.close();
+});
+$("helpClose").addEventListener("click", () => helpDialog.close());
+$("helpButton").addEventListener("click", openHelp);
+
+window.addEventListener("keydown", event => {
+  const key = event.key;
+  if (helpDialog.open) return;                          // 說明打開時，鍵盤不操作遊戲（Esc 會關掉說明）
+
+  if (key === "?" && !event.repeat) {
+    event.preventDefault();
+    openHelp();
+    return;
+  }
+
+  if ((key === "m" || key === "M") && !event.repeat) {   // 任何時候都能切換聲音
+    cycleSound();
+    return;
+  }
+  if ((key === "a" || key === "A") && !event.repeat) {   // 任何時候都能開關 AI
+    toggleAi();
+    return;
+  }
+
+  if (game.mode === "title" || game.mode === "over") {
+    if ((key === " " || key === "Enter") && !event.repeat) {
+      if (key === "Enter" && document.activeElement.tagName === "BUTTON") return;  // 交給按鈕自己處理
+      event.preventDefault();
+      flashButton("playButton");
+      pressPlay();
+    }
+    return;
+  }
+
+  if (game.mode === "paused") {
+    if ([" ", "p", "P", "Escape"].includes(key)) {
+      event.preventDefault();
+      flashButton("playButton");
+      resumeGame();
+    }
+    return;
+  }
+
+  const entry = PLAY_KEYS[key];
+  if (!entry) return;
+  event.preventDefault();
+  if (key === " " && event.repeat) return;   // 按住空白鍵不要連續落下
+  if (entry.button !== "playButton") takeOverFromAi();
+  flashButton(entry.button);
+  entry.action();
+});
+
+/* 觸控按鍵：repeat 為 true 時，按住會連續動作 */
+function holdButton(id, action, repeat) {
+  const button = $(id);
+  let delayTimer = null, repeatTimer = null;
+  const stop = () => { clearTimeout(delayTimer); clearInterval(repeatTimer); };
+  button.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    action();
+    if (repeat) {
+      stop();
+      delayTimer = setTimeout(() => { repeatTimer = setInterval(action, 70); }, 220);
+    }
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(name => button.addEventListener(name, stop));
+}
+/* 玩家按操作鍵時，AI 會交出控制權 */
+const byPlayer = action => () => { takeOverFromAi(); action(); };
+holdButton("leftButton", byPlayer(() => movePiece(-1)), true);
+holdButton("rightButton", byPlayer(() => movePiece(1)), true);
+holdButton("rotateButton", byPlayer(() => rotatePiece(false)), false);
+holdButton("downButton", byPlayer(softDrop), true);
+holdButton("dropButton", byPlayer(hardDrop), false);
+holdButton("playButton", pressPlay, false);
+
+/* 鍵盤使用者按 Enter 也能操作開始鍵 */
+$("playButton").addEventListener("keydown", event => {
+  if (event.key === "Enter") { event.preventDefault(); pressPlay(); }
+});
+$("langButton").addEventListener("click", switchLanguage);
+$("soundButton").addEventListener("click", cycleSound);
+$("aiButton").addEventListener("click", toggleAi);
+
+/* ----------------------------------------------------------
+   用手指轉唱片
+   - 左右滑：轉圓盤（手指繞著中心轉多少，唱片就轉多少）
+   - 點一下：旋轉方塊（沒在玩的時候＝開始／繼續）
+   - 往下滑：直接落下
+   一開始先看手指往哪個方向動，決定是「轉」還是「落下」
+   ---------------------------------------------------------- */
+const TAP_MAX_TIME = 280;        // 點一下：按住不超過幾毫秒
+const MOVE_THRESHOLD = 12;       // 移動超過幾像素，才算是滑動
+const DROP_MIN_DISTANCE = 40;    // 往下滑至少幾像素才落下
+
+/* 第一根手指的狀態（第二根手指只用來落下） */
+const gesture = { pointerId: null, startX: 0, startY: 0, startTime: 0, mode: null, lastAngle: 0, turned: 0 };
+
+/* 手指在 canvas 上的位置，以及相對唱片中心的角度和距離 */
+function touchPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  return {
+    x, y,
+    angle: Math.atan2(y - layout.center, x - layout.center),
+    distance: Math.hypot(x - layout.center, y - layout.center)
+  };
+}
+
+canvas.addEventListener("pointerdown", event => {
+  /* 第一根手指還在轉，第二根手指點下去 → 直接落下（一隻手也能邊轉邊放） */
+  if (gesture.pointerId !== null) {
+    if (canControl()) { takeOverFromAi(); hardDrop(); flashButton("dropButton"); }
+    return;
+  }
+  canvas.setPointerCapture(event.pointerId);
+  const point = touchPoint(event);
+  Object.assign(gesture, {
+    pointerId: event.pointerId, startX: point.x, startY: point.y,
+    startTime: performance.now(), mode: null, lastAngle: point.angle, turned: 0
+  });
+});
+
+canvas.addEventListener("pointermove", event => {
+  if (event.pointerId !== gesture.pointerId) return;
+  const point = touchPoint(event);
+  const dx = point.x - gesture.startX;
+  const dy = point.y - gesture.startY;
+
+  /* 決定這次是「轉」還是「落下」 */
+  if (gesture.mode === null && Math.hypot(dx, dy) > MOVE_THRESHOLD) {
+    gesture.mode = (dy > 0 && Math.abs(dy) > Math.abs(dx) * 1.5) ? "drop" : "spin";
+    gesture.lastAngle = point.angle;
+    if (gesture.mode === "spin") takeOverFromAi();
+  }
+  if (gesture.mode !== "spin" || !canControl()) return;
+
+  /* 太靠近中心時角度會亂跳，先不算 */
+  if (point.distance < layout.coreRadius * 1.3) { gesture.lastAngle = point.angle; return; }
+
+  let change = point.angle - gesture.lastAngle;
+  if (change > Math.PI) change -= Math.PI * 2;      // 跨過 ±180° 時接回來
+  if (change < -Math.PI) change += Math.PI * 2;
+  gesture.lastAngle = point.angle;
+  gesture.turned += change;
+
+  /* 每轉過大約一格，圓盤就轉一格。手指順時針 → 唱片順時針 */
+  const oneStep = layout.cellAngle * 0.9;
+  while (gesture.turned >= oneStep) { movePiece(-1); gesture.turned -= oneStep; }
+  while (gesture.turned <= -oneStep) { movePiece(1); gesture.turned += oneStep; }
+});
+
+function endGesture(event) {
+  if (event.pointerId !== gesture.pointerId) return;
+  const point = touchPoint(event);
+  const isTap = gesture.mode === null && performance.now() - gesture.startTime < TAP_MAX_TIME;
+
+  if (isTap) {
+    if (game.mode === "playing") { takeOverFromAi(); rotatePiece(false); }
+    else pressPlay();
+  } else if (gesture.mode === "drop" && point.y - gesture.startY > DROP_MIN_DISTANCE) {
+    takeOverFromAi();
+    hardDrop();
+  }
+  gesture.pointerId = null;
+}
+canvas.addEventListener("pointerup", endGesture);
+canvas.addEventListener("pointercancel", event => { if (event.pointerId === gesture.pointerId) gesture.pointerId = null; });
+
+/* 切到別的分頁或視窗時自動暫停 */
+document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
+window.addEventListener("blur", pauseGame);
+
+/* ==========================================================
+   12. 啟動
+   ========================================================== */
+applyLanguage();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
